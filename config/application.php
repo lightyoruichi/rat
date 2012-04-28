@@ -110,4 +110,10 @@ class AppConfig extends ServerConfig {
 	// Send emails from what address?
 	public $send_emails_from = 'support@blah.com';
 
+	// AWS keys, S3 for image uploads
+	public $aws = array(
+    'key'     => '',
+    'secret'  => ''
+  );
+
 }

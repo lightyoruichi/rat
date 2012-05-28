@@ -2,786 +2,772 @@
 
 class UsersController extends Application {
 
-	protected $requireLoggedOut = array('add', 'reset');
-	protected $requireLoggedIn = array('update', 'confirm');
+  protected $requireLoggedOut = array('add', 'reset');
+  protected $requireLoggedIn = array('update', 'confirm');
 
-	// Add a user / signup
-	function add($code = NULL) {
+  // Add a user / signup
+  function add($code = NULL) {
 
-		if (isset($_POST['email'])) {
-			//User is trying to signup
+    if (isset($_POST['email'])) {
+      //User is trying to signup
 
-			if ($code != NULL) {
-				// User is signing up with a code
+      // User trying to sign up but app not configured, error out
+      if (Admin::count_users() == 0) {
 
-				$this->signup_code();
+        Application::flash('error', $this->config->name . ' is not yet configured properly.
+          <br />Please contact the creator of this app.');
+        $this->loadView('items/index');
+        exit();
 
-			} else {
-				// User is signing up without a code
+      }
 
-				if ($this->config->beta == TRUE) {
-					// Do beta signup
+      if ($code != NULL) {
+        // User is signing up with a code
 
-					$this->signup_beta();
+        $this->signup_code();
 
-				} else {
-					// Do full signup
+      } else {
+        // User is signing up without a code
 
-					$this->signup_full();
+        if ($this->config->beta == TRUE) {
+          // Do beta signup
 
-				}
+          $this->signup_beta();
 
-			}
+        } else {
+          // Do full signup
 
-		} else {
+          $this->signup_full();
 
-			// No email submitted so show signup form
+        }
 
-			// old templates
-			$this->code = $code;
+      }
 
-			$this->loadView('users/add', array('code' => $code));
+    } else {
 
-		}
+      // No email submitted so show signup form
 
-	}
+      $this->loadView('users/add', array('code' => $code));
 
-	// Show a user / user page
-	function show($id) {
-
-		$user = User::get_by_id($id);
-
-		// id failed so try username (used by routes)
-		if ($user == NULL) {
-			$user = User::get_by_username($id);
-		}
-
-		// Page zero so overwrite to 1
-		if ( ! isset($this->uri['params']['page'])) {
-			$this->uri['params']['page'] = 1;
-		}
-
-		// items per page, change this to test pagination
-		$limit = 10;
-
-		if ($this->uri['params']['page'] == 1) {
-			$offset = 0;
-		} else {
-			$offset = ($this->uri['params']['page'] - 1) * $limit;
-		}
-
-		$items = $user->items($limit, $offset);
-
-		foreach ($items as $item) {
-			$item->content = process_content($item->content);
-			foreach ($item->comments as $comment) {
-				$comment->content = process_content($comment->content);
-			}
-		}
-
-		if ($this->config->friends['enabled'] == TRUE) {
-			$friends = $user->friend_check($_SESSION['user_id']);
-		}
-
-    if (isset($user->username)) {
-      $this->title = $user->username;
     }
 
-		// old template
-		$this->user = $user;
-		$this->items = $items;
+  }
 
-		if ($this->json) {
-			$this->render_json($this->user);
-		} else {
-		  $vars = array('user' => $user, 'items' => $items);
-		  if (isset($friends)) {
-		    $vars['friends'] = $friends;
-		  }
-			$this->loadView('users/show', $vars);
-		}
+  // Show a user / user page
+  function show($id) {
 
-	}
+    $user = User::get_by_id($id);
 
-	// Update user: change passsword, update profile
-	function update($page = 'profile') {
+    // id failed so try username (used by routes)
+    if ($user == null) {
+      $user = User::get_by_username($id);
+    }
 
-		$user = User::get_by_id($_SESSION['user_id']);
+    // username failed so error out
+    if ($user == null) {
+      throw new RoutingException($this->uri, "User not found");
+    }
 
-		if ($page == 'password') {
+    // Page zero so overwrite to 1
+    if ( ! isset($this->uri['params']['page'])) {
+      $this->uri['params']['page'] = 1;
+    }
 
-			if (isset($_POST['old_password']) && $_POST['old_password'] != '' && isset($_POST['new_password1']) && $_POST['new_password1'] != '' && isset($_POST['new_password2']) && $_POST['new_password2'] != '') {
-				$this->update_password($this->config->encryption_salt);
-			}
+    // items per page, change this to test pagination
+    $limit = 10;
 
-		} elseif ($page == 'profile') {
+    if ($this->uri['params']['page'] == 1) {
+      $offset = 0;
+    } else {
+      $offset = ($this->uri['params']['page'] - 1) * $limit;
+    }
 
-			if (isset($_POST['full_name']) || isset($_POST['bio']) || isset($_POST['url'])) {
-				$this->update_profile();
-				$user->full_name = $_POST['full_name'];
-				$user->bio = $_POST['bio'];
-				$user->url = $_POST['url'];
-			}
+    $items = $user->items($limit, $offset);
 
-		}
+    foreach ($items as $item) {
+      $item->content = process_content($item->content);
+      foreach ($item->comments as $comment) {
+        $comment->content = process_content($comment->content);
+      }
+      foreach ($item->likes as $like) {
+        if (isset($_SESSION['user_id']) && $like->user_id == $_SESSION['user_id']) {
+          $item->i_like = true;
+        } else {
+          $item->i_like = false;
+        }
+      }
+    }
 
-		// old template
-		$this->title = 'Settings';
-		$this->page = $page;
-		$this->user = $user;
+    if ($this->config->friends['enabled'] == TRUE) {
+      $friends = $user->friend_check($_SESSION['user_id']);
+    }
 
-		$this->loadView('users/update', array('page' => $page, 'user' => $user));
+    if ($this->json) {
 
-	}
+      $this->render_json($user);
 
-	// Password reset
-	function reset($code) {
+    } else {
 
-		if (isset($code)) {
-			// Process reset
+      $vars = array('user' => $user, 'items' => $items);
+      if (isset($friends)) {
+        $vars['friends'] = $friends;
+      }
 
-			// If two passwords submitted then check, otherwise show form
-			if ($_POST['password1'] != '' && $_POST['password2'] != '') {
+      if (isset($user->username)) {
+        $vars['title'] = $user->username;
+      }
 
-				if (User::check_password_reset_code($code) == FALSE) {
-					exit();
-				}
+      $this->loadView('users/show', $vars);
 
-				$error = '';
+    }
 
-				if ($_POST['password1'] == '' || $_POST['password2'] == '') {
-					$error .= 'Please enter your password twice.<br />';
-				}
+  }
 
-				if ($_POST['password1'] != $_POST['password2']) {
-					$error .= 'Passwords do not match.<br />';
-				}
+  // Update user: change passsword, update profile
+  function update($page = 'profile') {
 
-				// Error processing
-				if ($error == '') {
+    $user = User::get_by_id($_SESSION['user_id']);
 
-					$user_id = User::check_password_reset_code($code);
+    if ($page == 'password') {
 
-					// Get user object
-					$user = User::get_by_id($user_id);
+      if (isset($_POST['old_password']) && $_POST['old_password'] != '' && isset($_POST['new_password1']) && $_POST['new_password1'] != '' && isset($_POST['new_password2']) && $_POST['new_password2'] != '') {
+        $this->update_password($this->config->encryption_salt);
+      }
 
-					// Do update
-					$user->update_password($_POST['password1'], $this->config->encryption_salt);
+    } elseif ($page == 'profile') {
 
-					$user->authenticate($_POST['password1'], $this->config->encryption_salt);
+      if (isset($_POST['full_name']) || isset($_POST['bio']) || isset($_POST['url'])) {
+        $this->update_profile();
+        $user->full_name = $_POST['full_name'];
+        $user->bio = $_POST['bio'];
+        $user->url = $_POST['url'];
+      }
 
-					// Set welcome message
-					Application::flash('success', 'Password updated! Welcome back to ' . $this->config->name . '!');
+    }
 
-					// If redirect_to is set then redirect
-					if (isset($this->uri['params']['redirect_to'])) {
-						header('Location: ' . $this->uri['params']['redirect_to']);
-						exit();
-					}
+    $this->loadView('users/update', array('page' => $page, 'user' => $user));
 
-					// Go forth!
-					header('Location: ' . $this->config->url);
+  }
 
-					exit();
+  // Password reset
+  function reset($code = null) {
 
-				} else {
-					// Show error message
+    if ($code != null) {
+      // Process reset
 
-					if (User::check_password_reset_code($code) == TRUE) {
+      // If two passwords submitted then check, otherwise show form
+      if ($_POST['password1'] != '' && $_POST['password2'] != '') {
 
-						$valid_code = TRUE;
+        if (User::check_password_reset_code($code) == FALSE) {
+          exit();
+        }
 
-						Application::flash('error', $error);
+        $error = '';
 
-						$this->loadView('users/reset', array('valid_code' => $valid_code, 'code' => $code));
+        // Check password
+        $password_check = $this->check_password($_POST['password1'], $_POST['password2']);
+        if ($password_check !== TRUE) {
+          $error .= $password_check;
+        }
 
-					} else {
-						$this->loadView();
-					}
+        // Error processing
+        if ($error == '') {
 
-				}
+          $user_id = User::check_password_reset_code($code);
 
-			} else {
-				// Code present so show password reset form
+          // Get user object
+          $user = User::get_by_id($user_id);
 
-				if (User::check_password_reset_code($code) == TRUE) {
-					// Invite code valid
+          // Do update
+          $user->update_password($_POST['password1'], $this->config->encryption_salt);
 
-					$valid_code = TRUE;
+          $user->authenticate($_POST['password1'], $this->config->encryption_salt);
 
-					// old template
-					$this->code = $code;
+          // Set welcome message
+          Application::flash('success', 'Password updated! Welcome back to ' . $this->config->name . '!');
 
-					$this->loadView('users/reset', array('valid_code' => $valid_code, 'code' => $code));
+          // If redirect_to is set then redirect
+          if (isset($this->uri['params']['redirect_to'])) {
+            header('Location: ' . $this->uri['params']['redirect_to']);
+            exit();
+          }
 
-				} else {
+          // Go forth!
+          header('Location: ' . $this->config->url);
 
-					$this->title = 'Page not found';
-					$this->loadView();
-					exit;
+          exit();
 
-				}
+        } else {
+          // Show error message
 
-			}
+          if (User::check_password_reset_code($code) == TRUE) {
 
-		} else {
-			// No code in URL so show new reset form
+            Application::flash('error', $error);
 
-			if ($_POST['email'] != '') {
-				// Email submitted so send password reset email
+            $this->loadView('users/reset', array('valid_code' => TRUE, 'code' => $code));
 
-				$user = User::get_by_email($_POST['email']);
+          } else {
 
-				// Check is a user
-				if ($user != NULL) {
+            $this->loadView();
 
-					// Generate code
-					$code = $user->generate_password_reset_code();
+          }
 
-					$to			= $_POST['email'];
-					$subject	= '[' . $this->config->name . '] Password reset';
-					$link		= substr($this->config->url, 0, -1).$this->url_for('users', 'reset', $code);
+        }
 
-					// Load subject and body from template
-					// old template
-					include "themes/{$this->config->theme}/emails/password_reset.php";
+      } else {
+        // Code present so show password reset form
 
-					if ($this->config->theme == 'twig') {
+        if (User::check_password_reset_code($code) == TRUE) {
+          // Invite code valid
 
-						$to			= array('email' => $_POST['email']);
-						$subject	= '[' . $this->config->name . '] Password reset';
-						$body		= $this->twig_string->render(file_get_contents("themes/{$this->config->theme}/emails/password_reset.html"), array('link' => $link, 'user' => $user, 'app' => array('config' => $this->config)));
+          $this->loadView('users/reset', array('valid_code' => TRUE, 'code' => $code));
 
-					}
+        } else {
 
-					// Email user
-					$this->email->send_email($to, $subject, $body);
+          throw new RoutingException($uri, "Page not found");
 
-				}
+        }
 
-				Application::flash('info', 'Check your email for instructions about how to reset your password!');
+      }
 
-			}
+    } else {
+      // No code in URL so show new reset form
 
-			$this->loadView('users/reset', array('valid_code' => $valid_code, 'code' => $code));
+      if (isset($_POST['email'])) {
+        // Email submitted so send password reset email
 
-		}
+        $user = User::get_by_email($_POST['email']);
 
-	}
+        // Check is a user
+        if ($user != NULL) {
 
-	// Confirm email address
-	function confirm($email) {
+          // Generate code
+          $code = $user->generate_password_reset_code();
 
+          $to       = array('email' => $_POST['email']);
+          $link      = substr($this->config->url, 0, -1).$this->url_for('users', 'reset', $code);
+          $subject  = '[' . $this->config->name . '] Password reset';
+          $body     = $this->twig_string->render(file_get_contents("themes/{$this->config->theme}/emails/password_reset.html"), array('link' => $link, 'user' => $user, 'app' => array('config' => $this->config)));
 
+          // Email user
+          $this->email->send_email($to, $subject, $body);
 
-	}
+        }
 
-	// Helper function: update password
-	private function update_password($salt) {
+        Application::flash('info', 'Check your email for instructions about how to reset your password!');
 
-		$user = User::get_by_id($_SESSION['user_id']);
+      }
 
-		if (md5($_POST['old_password'] . $salt) == $user->password) {
-			// Check old passwords match
+      $this->loadView('users/reset', array('valid_code' => FALSE, 'code' => $code));
 
-			if ($_POST['new_password1'] == $_POST['new_password2']) {
-				// New passwords match
+    }
 
-				// Call update_password in user model
-				$user->update_password($_POST['new_password1'], $salt);
+  }
 
-				// Update session
-				$user->password = md5($_POST['new_password1'] . $salt);
+  // Confirm email address
+  function confirm($email) {
 
-				// Log password update
-				if (isset($this->plugins->log)) {
-					$this->plugins->log->add($_SESSION['user_id'], 'user', NULL, 'change_password');
-				}
 
-				Application::flash('success', 'Password updated!');
 
-			} else {
-				// New passwords don't match
+  }
 
-				Application::flash('error', 'There was a problem, please try again.');
+  // Helper function: update password
+  private function update_password($salt) {
 
-			}
+    $user = User::get_by_id($_SESSION['user_id']);
 
-		} else {
-			// Old passwords don't match
+    $error = '';
 
-			Application::flash('error', 'There was a problem, please try again.');
+    if (md5($_POST['old_password'] . $salt) != $user->password) {
+      // Old passwords don't match
 
-		}
+      $error .= 'Incorrect existing password.<br />';
 
-	}
+    }
 
-	//  Helper function: update profile
-	private function update_profile() {
+    // Check password
+    $password_check = $this->check_password($_POST['new_password1'], $_POST['new_password2']);
+    if ($password_check !== TRUE) {
+      $error .= $password_check;
+    }
 
-		$error = '';
+    if ($error == '') {
 
-		// Validate URL
+      // Call update_password in user model
+      $user->update_password($_POST['new_password1'], $salt);
 
-		// Check for empty URL. Default value: http://
-		if ($_POST['url'] == 'http://') {
-			$_POST['url'] = NULL;
-		}
+      // Update session
+      $user->password = md5($_POST['new_password1'] . $salt);
 
-		// Ensure URL begins with http://
-		if ($_POST['url'] != NULL && (substr($_POST['url'], 0, 7) != 'http://' && substr($_POST['url'], 0, 8) != 'https://')) {
-			$_POST['url'] = 'http://' . $_POST['url'];
-		}
+      // Log password update
+      if (isset($this->plugins->log)) {
+        $this->plugins->log->add($_SESSION['user_id'], 'user', NULL, 'change_password');
+      }
 
-		// Check for spaces
-		if (User::check_contains_spaces($_POST['url']) == TRUE) {
-			$error .= 'URL cannot contain spaces.';
-		}
+      Application::flash('success', 'Password updated!');
 
-		// End URL validation
+    } else {
 
-		if ($error == '') {
+      // Show error message
+      Application::flash('error', $error);
 
-			$user = User::get_by_id($_SESSION['user_id']);
+    }
 
-			// Call update_profile in user model
-			$user->update_profile($_POST['full_name'], $_POST['bio'], $_POST['url']);
+  }
 
-			// Set success message
-			Application::flash('success', 'Profile information updated!');
+  //  Helper function: update profile
+  private function update_profile() {
 
-		} else {
+    $error = '';
 
-			Application::flash('error', $error);
+    // Validate URL
 
-		}
+    // Check for empty URL. Default value: http://
+    if ($_POST['url'] == 'http://') {
+      $_POST['url'] = NULL;
+    }
 
-	}
+    // Ensure URL begins with http://
+    if ($_POST['url'] != NULL && (substr($_POST['url'], 0, 7) != 'http://' && substr($_POST['url'], 0, 8) != 'https://')) {
+      $_POST['url'] = 'http://' . $_POST['url'];
+    }
 
-	// Helper function: signup with an invite code
-	private function signup_code() {
+    // Check for spaces
+    if (User::check_contains_spaces($_POST['url']) == TRUE) {
+      $error .= 'URL cannot contain spaces.';
+    }
 
-		$error = '';
+    // End URL validation
 
-		// Check invite code (only really matters if app is in beta)
+    if ($error == '') {
 
-		if ($this->config->beta == TRUE) {
+      $user = User::get_by_id($_SESSION['user_id']);
 
-			if (Invite::check_code_valid($_POST['code'], $_POST['email']) != TRUE) {
-				$error .= 'Invalid invite code.<br />';
-			}
+      // Call update_profile in user model
+      $user->update_profile($_POST['full_name'], $_POST['bio'], $_POST['url']);
 
-		}
+      // Set success message
+      Application::flash('success', 'Profile information updated!');
 
-		// Check email
-		$_POST['email'] = trim($_POST['email']);
-		$email_check = $this->check_email($_POST['email'], FALSE);
-		if ($email_check !== TRUE) {
-			$error .= $email_check;
-		}
+    } else {
 
-		// Check username
-		$username_check = $this->check_username($_POST['username']);
-		if ($username_check !== TRUE) {
-			$error .= $username_check;
-		}
+      Application::flash('error', $error);
 
-		// Check password
-		if ($_POST['password1'] == '' || $_POST['password2'] == '') {
-			$error .= 'Please enter your password twice.<br />';
-		}
-		if ($_POST['password1'] != $_POST['password2']) {
-			$error .= 'Passwords do not match.<br />';
-		}
+    }
 
-		// Error processing
+  }
 
-		if ($error == '') {
-			// No error so proceed...
+  // Helper function: signup with an invite code
+  private function signup_code() {
 
-			// First check if user added
-			$user = User::get_by_email($_POST['email']);
+    $error = '';
 
-			// If not then add
-			if ($user == NULL) {
-				$user_id = User::add($_POST['email']);
-				$user = User::get_by_id($user_id);
-			}
+    // Check invite code (only really matters if app is in beta)
 
-			// Do signup
-			User::signup($user->id, $_POST['username'], $_POST['password1'], $this->config->encryption_salt);
+    if ($this->config->beta == TRUE) {
 
-			if ($this->config->send_emails == TRUE) {
-				// Send 'thank you for signing up' email
+      if (Invite::check_code_valid($_POST['code'], $_POST['email']) != TRUE) {
+        $error .= 'Invalid invite code.<br />';
+      }
 
-				$admin = User::get_by_id($this->config->admin_users[0]);
+    }
 
-				$to			= "{$_POST['username']} <{$_POST['email']}>";
+    // Check email
+    $_POST['email'] = trim($_POST['email']);
+    $email_check = $this->check_email($_POST['email'], FALSE);
+    if ($email_check !== TRUE) {
+      $error .= $email_check;
+    }
 
-				// Load subject and body from template
-				// old template
-				include "themes/{$this->config->theme}/emails/signup.php";
+    // Check username
+    $username_check = $this->check_username($_POST['username']);
+    if ($username_check !== TRUE) {
+      $error .= $username_check;
+    }
 
-				if ($this->config->theme == 'twig') {
+    // Check password
+    $password_check = $this->check_password($_POST['password1'], $_POST['password2']);
+    if ($password_check !== TRUE) {
+      $error .= $password_check;
+    }
 
-					$to			= array('name' => $_POST['username'], 'email' => $_POST['email']);
-					$subject	= '[' . $this->config->name . '] Your ' . $this->config->name . ' invite is here!';
-					$body		= $this->twig_string->render(file_get_contents("themes/{$this->config->theme}/emails/signup.html"), array('link' => $link, 'username' => $_POST['username'], 'app' => array('config' => $this->config)));
+    // Error processing
 
-				}
+    if ($error == '') {
+      // No error so proceed...
 
-				// Email user
-				$this->email->send_email($to, $subject, $body);
+      // First check if user added
+      $user = User::get_by_email($_POST['email']);
 
-			}
+      // If not then add
+      if ($user == NULL) {
+        $user_id = User::add($_POST['email']);
+        $user = User::get_by_id($user_id);
+      }
 
-			// Log signup
-			if (isset($this->plugins->log)) {
-				$this->plugins->log->add($user->id, 'user', NULL, 'signup');
-			}
+      // Do signup
+      User::signup($user->id, $_POST['username'], $_POST['password1'], $this->config->encryption_salt);
 
-			// Start session
-			$_SESSION['user_id'] = $user->id;
+      $admin = User::get_by_id($this->config->admin_users[0]);
 
-			// Check invites are enabled
-			if ($this->config->invites['enabled'] == TRUE) {
+      $to       = array('name' => $_POST['username'], 'email' => $_POST['email']);
+      $subject  = '[' . $this->config->name . '] Your ' . $this->config->name . ' invite is here!';
+      $body     = $this->twig_string->render(file_get_contents("themes/{$this->config->theme}/emails/signup.html"), array('username' => $_POST['username'], 'app' => array('config' => $this->config)));
 
-				// Get invites
-				$invites = Invite::list_by_code($_POST['code']);
+      $this->email->send_email($to, $subject, $body);
 
-				if (is_array($invites)) {
-					foreach ($invites as $invite) {
+      // Log signup
+      if (isset($this->plugins->log)) {
+        $this->plugins->log->add($user->id, 'user', NULL, 'signup');
+      }
 
-						// Update invites
-						$invite->update();
+      // Start session
+      $_SESSION['user_id'] = $user->id;
 
-						// Log invite update
-						if (isset($this->plugins->log)) {
-							$this->plugins->log->add($_SESSION['user_id'], 'invite', $invite->id, 'accept');
-						}
+      // Check invites are enabled
+      if ($this->config->invites['enabled'] == TRUE) {
 
-						// Update points (but only if inviting user is not an admin)
-						if (isset($this->plugins->points) && in_array($invite->user_id, $this->config->admin_users) != TRUE) {
+        // Get invites
+        $invites = Invite::list_by_code($_POST['code']);
 
-							// Update points
-							$this->plugins->points->update($invite->user_id, $this->plugins->points['per_invite_accepted']);
+        if (is_array($invites)) {
+          foreach ($invites as $invite) {
 
-							// Log points update
-							if (isset($this->plugins->log)) {
-								$this->plugins->log->add($invite->user_id, 'points', NULL, $this->plugins->points['per_invite_accepted'], 'invite_accepted = ' . $invite->id);
-							}
+            // Update invites
+            $invite->update();
 
-						}
+            // Log invite update
+            if (isset($this->plugins->log)) {
+              $this->plugins->log->add($_SESSION['user_id'], 'invite', $invite->id, 'accept');
+            }
 
-					}
-					// end foreach
-				}
-				// end if is_array
+            // Update points (but only if inviting user is not an admin)
+            if (isset($this->plugins->points) && in_array($invite->user_id, $this->config->admin_users) != TRUE) {
 
-			}
+              // Update points
+              $this->plugins->points->update($invite->user_id, $this->plugins->points['per_invite_accepted']);
 
-			// Log login
-			if (isset($this->plugins->log)) {
-				$this->plugins->log->add($_SESSION['user_id'], 'user', NULL, 'login');
-			}
+              // Log points update
+              if (isset($this->plugins->log)) {
+                $this->plugins->log->add($invite->user_id, 'points', NULL, $this->plugins->points['per_invite_accepted'], 'invite_accepted = ' . $invite->id);
+              }
 
-			// If redirect_to is set then redirect
-			if ($this->uri['params']['redirect_to']) {
-				header('Location: ' . $this->uri['params']['redirect_to']);
-				exit();
-			}
+            }
 
-			// Set welcome message
-			Application::flash('success', 'Welcome to ' . $this->config->name . '!');
+          }
+          // end foreach
+        }
+        // end if is_array
 
-			// Go forth!
-			header('Location: ' . $this->config->url);
+      }
 
-			exit();
+      // Log login
+      if (isset($this->plugins->log)) {
+        $this->plugins->log->add($_SESSION['user_id'], 'user', NULL, 'login');
+      }
 
-		} else {
-			// There was an error
+      // If redirect_to is set then redirect
+      if ($this->uri['params']['redirect_to']) {
+        header('Location: ' . $this->uri['params']['redirect_to']);
+        exit();
+      }
 
-			// Propagate get vars to be picked up by the form
-			$this->uri['params']['email']		= $_POST['email'];
-			$this->uri['params']['username']	= $_POST['username'];
-			$this->code			= $_POST['code'];
+      // Set welcome message
+      Application::flash('success', 'Welcome to ' . $this->config->name . '!');
 
-			// Show error message
-			Application::flash('error', $error);
-			$this->title = 'Signup';
+      // Go forth!
+      header('Location: ' . $this->config->url);
 
-			// Show signup form
-			$this->loadView('users/add', array('code' => $_POST['code']));
+      exit();
 
-		}
+    } else {
+      // There was an error
 
-	}
+      // Propagate get vars to be picked up by the form
+      $this->uri['params']['email']     = $_POST['email'];
+      $this->uri['params']['username']  = $_POST['username'];
+      $this->code                       = $_POST['code'];
 
-	// Helper function: beta signup
-	private function signup_beta() {
+      // Show error message
+      Application::flash('error', $error);
 
-		$error = '';
+      // Show signup form
+      $this->loadView('users/add', array('title' => 'Signup', 'code' => $_POST['code']));
 
-		// Check email
-		$_POST['email'] = trim($_POST['email']);
-		$email_check = $this->check_email($_POST['email']);
-		if ($email_check !== TRUE) {
-			$error .= $email_check;
-		}
+    }
 
-		// Error processing
+  }
 
-		if ($error == '') {
-			// No error so proceed...
+  // Helper function: beta signup
+  private function signup_beta() {
 
-			// First check if user added
-			$user = User::get_by_email($_POST['email']);
+    $error = '';
 
-			// If not then add
-			if ($user == NULL) {
-				$user_id = User::add($_POST['email']);
-				$user = User::get_by_id($user_id);
-			}
+    // Check email
+    $_POST['email'] = trim($_POST['email']);
+    $email_check = $this->check_email($_POST['email']);
+    if ($email_check !== TRUE) {
+      $error .= $email_check;
+    }
 
-			// Log beta signup
-			if (isset($this->plugins->log)) {
-				$this->plugins->log->add($user_id, 'user', NULL, 'beta_signup', $_POST['email']);
-			}
+    // Error processing
 
-			// Set thank you & tweet this message
-			Application::flash('success', 'Thanks for signing up!<br />We will be in touch soon...');
+    if ($error == '') {
+      // No error so proceed...
 
-			// Go forth!
-			header('Location: ' . $this->config->url);
+      // First check if user added
+      $user = User::get_by_email($_POST['email']);
 
-			exit();
+      // If not then add
+      if ($user == NULL) {
+        $user_id = User::add($_POST['email']);
+        $user = User::get_by_id($user_id);
+      }
 
-		} else {
-			// There was an error
+      // Log beta signup
+      if (isset($this->plugins->log)) {
+        $this->plugins->log->add($user_id, 'user', NULL, 'beta_signup', $_POST['email']);
+      }
 
-			// Propagate get vars to be picked up by the form
-			$this->uri['params']['email']		= $_POST['email'];
-			$this->uri['params']['username']	= $_POST['username'];
-			$this->code			= $_POST['code'];
+      // Set thank you & tweet this message
+      Application::flash('success', 'Thanks for signing up!<br />We will be in touch soon...');
 
-			// Show error message
-			Application::flash('error', $error);
-			$this->title = 'Beta signup';
+      // Go forth!
+      header('Location: ' . $this->config->url);
 
-			// Show signup form
-			$this->loadView('users/add');
+      exit();
 
-		}
+    } else {
+      // There was an error
 
-	}
+      // Propagate get vars to be picked up by the form
+      $this->uri['params']['email']    = $_POST['email'];
+      $this->uri['params']['username']  = $_POST['username'];
+      $this->code      = $_POST['code'];
 
-	// Helper function: full signup
-	private function signup_full() {
+      // Show error message
+      Application::flash('error', $error);
 
-		$error = '';
+      // Show signup form
+      $this->loadView('users/add', array('title' => 'Beta signup'));
 
-		// Check email
-		$_POST['email'] = trim($_POST['email']);
-		$email_check = $this->check_email($_POST['email']);
-		if ($email_check !== TRUE) {
-			$error .= $email_check;
-		}
+    }
 
-		// Check username
-		$username_check = $this->check_username($_POST['username']);
-		if ($username_check !== TRUE) {
-			$error .= $username_check;
-		}
+  }
 
-		// Check password
-		if ($_POST['password1'] == '' || $_POST['password2'] == '') {
-			$error .= 'Please enter your password twice.<br />';
-		}
+  // Helper function: full signup
+  private function signup_full() {
 
-		if ($_POST['password1'] != $_POST['password2']) {
-			$error .= 'Passwords do not match.<br />';
-		}
+    $error = '';
 
-		// Error processing
-		if ($error == '') {
-			// No error so proceed...
+    // Check email
+    $_POST['email'] = trim($_POST['email']);
+    $email_check = $this->check_email($_POST['email']);
+    if ($email_check !== TRUE) {
+      $error .= $email_check;
+    }
 
-			// First check if user added
-			$user = User::get_by_email($_POST['email']);
+    // Check username
+    $username_check = $this->check_username($_POST['username']);
+    if ($username_check !== TRUE) {
+      $error .= $username_check;
+    }
 
-			// If not then add
-			if ($user == NULL) {
-				$user_id = User::add($_POST['email']);
-				$user = User::get_by_id($user_id);
-			}
+    // Check password
+    $password_check = $this->check_password($_POST['password1'], $_POST['password2']);
+    if ($password_check !== TRUE) {
+      $error .= $password_check;
+    }
 
-			// Do signup
-			User::signup($user->id, $_POST['username'], $_POST['password1'], $this->config->encryption_salt);
+    // Error processing
+    if ($error == '') {
+      // No error so proceed...
 
-			if ($this->config->send_emails == TRUE) {
-				// Send 'thank you for signing up' email
+      // First check if user added
+      $user = User::get_by_email($_POST['email']);
 
-				$admin = User::get_by_id($this->config->admin_users[0]);
+      // If not then add
+      if ($user == NULL) {
+        $user_id = User::add($_POST['email']);
+        $user = User::get_by_id($user_id);
+      }
 
-				$to = "{$_POST['username']} <{$_POST['email']}>";
+      // Do signup
+      User::signup($user->id, $_POST['username'], $_POST['password1'], $this->config->encryption_salt);
 
-				if ($this->config->theme == 'twig') {
+      if ($this->config->send_emails == TRUE) {
+        // Send 'thank you for signing up' email
 
-					$to = array('name' => $_POST['username'], 'email' => $_POST['email']);
-					$subject = '[' . $this->config->name . '] Welcome to ' . $this->config->name . '!';
-					$body = $this->twig_string->render(file_get_contents("themes/{$this->config->theme}/emails/signup.html"), array('username' => $_POST['username'], 'app' => array('config' => $this->config)));
+        $admin = User::get_by_id($this->config->admin_users[0]);
 
-				} else {
+        $to = array('name' => $_POST['username'], 'email' => $_POST['email']);
+        $subject = '[' . $this->config->name . '] Welcome to ' . $this->config->name . '!';
+        $body = $this->twig_string->render(file_get_contents("themes/{$this->config->theme}/emails/signup.html"), array('username' => $_POST['username'], 'app' => array('config' => $this->config)));
 
-  				// Load subject and body from template
-  				// old template
-				  include "themes/{$this->config->theme}/emails/signup.php";
+        // Email user
+        $this->email->send_email($to, $subject, $body, TRUE);
 
-				}
+      }
 
-				// Email user
-				$this->email->send_email($to, $subject, $body, TRUE);
+      // Log signup
+      if (isset($this->plugins->log)) {
+        $this->plugins->log->add($user->id, 'user', NULL, 'signup');
+      }
 
-			}
+      // Start session
+      $_SESSION['user_id'] = $user->id;
 
-			// Log signup
-			if (isset($this->plugins->log)) {
-				$this->plugins->log->add($user->id, 'user', NULL, 'signup');
-			}
+      // Check invites are enabled and the code is valid
+      if ($this->config->invites['enabled'] == TRUE && Invite::check_code_valid($_POST['code'], $_POST['email']) == TRUE) {
 
-			// Start session
-			$_SESSION['user_id'] = $user->id;
+        // Get invites
+        $invites = Invite::list_by_code($_POST['code']);
 
-			// Check invites are enabled and the code is valid
-			if ($this->config->invites['enabled'] == TRUE && Invite::check_code_valid($_POST['code'], $_POST['email']) == TRUE) {
+        if (is_array($invites)) {
+          foreach ($invites as $invite) {
 
-				// Get invites
-				$invites = Invite::list_by_code($_POST['code']);
+            // Update invites
+            $invite->update();
 
-				if (is_array($invites)) {
-					foreach ($invites as $invite) {
+            // Log invite update
+            if (isset($this->plugins->log)) {
+              $this->plugins->log->add($_SESSION['user_id'], 'invite', $invite->id, 'accept');
+            }
 
-						// Update invites
-						$invite->update();
+            // Update points (but only if inviting user is not an admin)
+            if (isset($this->plugins->points) && in_array($invite->user_id, $this->config->admin_users) != TRUE) {
 
-						// Log invite update
-						if (isset($this->plugins->log)) {
-							$this->plugins->log->add($_SESSION['user_id'], 'invite', $invite->id, 'accept');
-						}
+              // Update points
+              $this->plugins->points->update($invite->user_id, $this->plugins->points['per_invite_accepted']);
 
-						// Update points (but only if inviting user is not an admin)
-						if (isset($this->plugins->points) && in_array($invite->user_id, $this->config->admin_users) != TRUE) {
+              // Log points update
+              if (isset($this->plugins->log)) {
+                $this->plugins->log->add($invite->user_id, 'points', NULL, $this->plugins->points['per_invite_accepted'], 'invite_accepted = ' . $invite->id);
+              }
 
-							// Update points
-							$this->plugins->points->update($invite->user_id, $this->plugins->points['per_invite_accepted']);
+            }
 
-							// Log points update
-							if (isset($this->plugins->log)) {
-								$this->plugins->log->add($invite->user_id, 'points', NULL, $this->plugins->points['per_invite_accepted'], 'invite_accepted = ' . $invite->id);
-							}
+          }
+          // end foreach
+        }
+        // end if is_array
 
-						}
+      }
 
-					}
-					// end foreach
-				}
-				// end if is_array
+      // Log login
+      if (isset($this->plugins->log)) {
+        $this->plugins->log->add($_SESSION['user_id'], 'user', NULL, 'login');
+      }
 
-			}
+      // If redirect_to is set then redirect
+      if ($this->uri['params']['redirect_to']) {
+        header('Location: ' . $this->uri['params']['redirect_to']);
+        exit();
+      }
 
-			// Log login
-			if (isset($this->plugins->log)) {
-				$this->plugins->log->add($_SESSION['user_id'], 'user', NULL, 'login');
-			}
+      // Set welcome message
+      Application::flash('success', 'Welcome to ' . $this->config->name . '!');
 
-			// If redirect_to is set then redirect
-			if ($this->uri['params']['redirect_to']) {
-				header('Location: ' . $this->uri['params']['redirect_to']);
-				exit();
-			}
+      // Go forth!
+      header('Location: ' . $this->config->url);
 
-			// Set welcome message
-			Application::flash('success', 'Welcome to ' . $this->config->name . '!');
+      exit();
 
-			// Go forth!
-			header('Location: ' . $this->config->url);
+    } else {
+      // There was an error
 
-			exit();
+      // Propagate get vars to be picked up by the form
+      $this->uri['params']['email'] = $_POST['email'];
+      $this->uri['params']['username'] = $_POST['username'];
+      if (isset($_POST['code'])) {
+        $this->code = $_POST['code'];
+      }
 
-		} else {
-			// There was an error
+      // Show error message
+      Application::flash('error', $error);
 
-			// Propagate get vars to be picked up by the form
-			$this->uri['params']['email'] = $_POST['email'];
-			$this->uri['params']['username'] = $_POST['username'];
-			if (isset($_POST['code'])) {
-			  $this->code = $_POST['code'];
-			}
+      // Show signup form
+      $this->loadView('users/add', array('title' => 'Signup'));
 
-			// Show error message
-			Application::flash('error', $error);
-			$this->title = 'Signup';
+    }
 
-			// Show signup form
-			$this->loadView('users/add');
+  }
 
-		}
+  // Helper function: checks email is valid and available, returns TRUE or error message
+  private function check_email($email, $new = TRUE) {
 
-	}
+    $return = '';
 
-	// Helper function: checks email is valid and available, returns TRUE or error message
-	private function check_email($email, $new = TRUE) {
+    if ($email == '') {
+      $return .= 'Email cannot be left blank.<br />';
+    }
 
-		$return = '';
+    if (User::check_contains_spaces($email) == TRUE) {
+      $return .= 'Email cannot contain spaces.<br />';
+    }
 
-		if ($email == '') {
-			$return .= 'Email cannot be left blank.<br />';
-		}
+    if (User::check_contains_at($email) != TRUE) {
+      $return .= 'Email must contain an @ symbol.<br />';
+    }
 
-		if (User::check_contains_spaces($email) == TRUE) {
-			$return .= 'Email cannot contain spaces.<br />';
-		}
+    if (User::check_email_available($email) != TRUE && $new == TRUE) {
+      $return .= 'An account with that email address already exists in the system. ' . $this->get_link_to('Click here', 'sessions', 'add') . ' to login.<br />';
+    }
 
-		if (User::check_contains_at($email) != TRUE) {
-			$return .= 'Email must contain an @ symbol.<br />';
-		}
+    return strlen($return) > 0 ? $return : TRUE;
 
-		if (User::check_email_available($email) != TRUE && $new == TRUE) {
-			$return .= 'Email already in the system!<br />';
-		}
+  }
 
-		if (empty($return)) {
-			$return = TRUE;
-		}
+  // Helper function: checks username is valid and available, returns TRUE or error message
+  private function check_username($username) {
 
-		return $return;
+    $return = '';
 
-	}
+    if ($username == '') {
+      $return .= 'Username cannot be left blank.<br />';
+    }
 
-	// Helper function: checks username is valid and available, returns TRUE or error message
-	private function check_username($username) {
+    if (User::check_alphanumeric($username) != TRUE) {
+      $return .= 'Username must only contain letters and numbers.<br />';
+    }
 
-		$return = '';
+    if (User::check_username_available($username) != TRUE) {
+      $return .= 'Username not available.<br />';
+    }
 
-		if ($username == '') {
-			$return .= 'Username cannot be left blank.<br />';
-		}
+    return strlen($return) > 0 ? $return : TRUE;
 
-		if (User::check_alphanumeric($username) != TRUE) {
-			$return .= 'Username must only contain letters and numbers.<br />';
-		}
+  }
 
-		if (User::check_username_available($username) != TRUE) {
-			$return .= 'Username not available.<br />';
-		}
+  // Helper function: checks passwords match and are good, returns TRUE or error message
+  private function check_password($password1, $password2) {
 
-		if (empty($return)) {
-			$return = TRUE;
-		}
+    $return = '';
 
-		return $return;
+    // Easily guessable passwords
+    $easy_passwords = array(
+      'password', '123', '1234', '12345', '123456', '1234567', '12345678', 'abc123',
+      'qwerty', 'letmein', 'test', 'blah', 'hello', 'jesus', 'iloveyou', 'monkey', 'princess'
+    );
 
-	}
+    if ($password1 == '' || $password2 == '') {
+      $return .= 'Please enter your password twice.<br />';
+    }
+
+    if ($password1 != $password2) {
+      $return .= 'New passwords do not match.<br />';
+    }
+
+    if (in_array($password1, $easy_passwords)) {
+      $return .= 'Password must not be easy to guess.<br />';
+    }
+
+    if (strlen($password1) < 3) {
+      $return .= 'Password must be more than two characters long.<br />';
+    }
+
+    return strlen($return) > 0 ? $return : TRUE;
+
+  }
 
 }

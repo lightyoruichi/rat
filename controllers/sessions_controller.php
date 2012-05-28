@@ -2,70 +2,80 @@
 
 class SessionsController extends Application {
 
-	protected $requireLoggedIn = array('remove');
-	protected $requireLoggedOut = array('add');
+  protected $requireLoggedIn = array('remove');
+  protected $requireLoggedOut = array('add');
 
-	function add() {
+  function add() {
 
-		if (isset($_POST['email']) && isset($_POST['password'])) {
+    if (isset($_POST['email']) && isset($_POST['password'])) {
 
-			$user = User::get_by_email($_POST['email']);
+      // User trying to sign up but app not configured, error out
+      if (Admin::count_users() == 0) {
 
-			if ($user->authenticate($_POST['password'], $this->config->encryption_salt) == TRUE) {
+        Application::flash('error', $this->config->name . ' is not yet configured properly.
+          <br />Please contact the creator of this app.');
+        $this->loadView('items/index');
+        exit();
 
-				// Get redirected
-				if (isset($this->uri['params']['redirect_to'])) {
-					header('Location: ' . $this->uri['params']['redirect_to']);
-					exit();
-				}
+      }
 
-				// Go forth
-				header('Location: ' . $this->config->url);
+      $user = User::get_by_email($_POST['email']);
 
-				exit();
+      if ($user != NULL && $user->authenticate($_POST['password'], $this->config->encryption_salt) == TRUE) {
 
-			} else {
+        // Get redirected
+        if (isset($this->uri['params']['redirect_to'])) {
+          header('Location: ' . $this->uri['params']['redirect_to']);
+          exit();
+        }
 
-				Application::flash('error', 'Something isn\'t quite right. Please try again...');
-				$email = $_POST['email'];
+        // Go forth
+        header('Location: ' . $this->config->url);
 
-			}
+        exit();
 
-		}
+      } else {
 
-		if ( ! isset($_SESSION['user_id'])) {
+        Application::flash('error', 'Something isn\'t quite right. Please try again...');
+        $email = $_POST['email'];
 
-            if (isset($email)) {
-			    $this->loadView('sessions/add', array('email' => $email));
-            } else {
-                $this->loadView('sessions/add');
-            }
+      }
 
-		} else {
+    }
 
-			Application::flash('error', 'You are already logged in! ' . $this->get_link_to('Click here', 'sessions', 'remove').' to logout.');
-			$this->loadView();
+    if ( ! isset($_SESSION['user_id'])) {
 
-		}
+      if (isset($email)) {
+        $this->loadView('sessions/add', array('email' => $email));
+      } else {
+        $this->loadView('sessions/add');
+      }
 
-	}
+    } else {
 
-	function remove() {
+      Application::flash('error', 'You are already logged in! ' . $this->get_link_to('Click here', 'sessions', 'remove').' to logout.');
+      $this->loadView();
 
-		$user = User::get_by_id($_SESSION['user_id']);
+    }
 
-		if ($user->deauthenticate() == TRUE) {
+  }
 
-			Application::flash('info', 'You are now logged out.');
-			Application::redirect_to($this->config->default_controller);
+  function remove() {
 
-		} else {
+    $user = User::get_by_id($_SESSION['user_id']);
 
-			Application::flash('info', 'Nothing to see here.');
-			$this->loadView();
+    if ($user->deauthenticate() == TRUE) {
 
-		}
+      Application::flash('info', 'You are now logged out.');
+      Application::redirect_to($this->config->default_controller);
 
-	}
+    } else {
+
+      Application::flash('info', 'Nothing to see here.');
+      $this->loadView();
+
+    }
+
+  }
 
 }

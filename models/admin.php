@@ -2,116 +2,145 @@
 
 class Admin {
 
-	// Get all users
-	public static function list_users() {
+  // Get all users
+  public static function list_users() {
 
-		global $mysqli;
-		$config = new AppConfig;
+    global $mysqli;
+    $config = new AppConfig;
 
-		$sql = "SELECT * FROM `{$config->database[SITE_IDENTIFIER]['prefix']}users` WHERE `date_joined` IS NOT NULL ORDER BY `date_joined` DESC";
-		$users_query = mysqli_query($mysqli, $sql);
+    $users = array();
 
-		$users = array();
-		while ($user = mysqli_fetch_assoc($users_query)) {
+    $sql = "SELECT * FROM `{$config->database[SITE_IDENTIFIER]['prefix']}users` WHERE `date_joined` IS NOT NULL ORDER BY `date_joined` DESC";
+    $query = mysqli_query($mysqli, $sql);
 
-			// Find last login
-			$last_login_query = mysqli_query($mysqli, "SELECT TIMESTAMPDIFF(DAY, date, NOW()) FROM `{$config->database[SITE_IDENTIFIER]['prefix']}log` WHERE `user_id` = '{$user['id']}' AND `action` = 'login' ORDER BY `date` DESC LIMIT 1");
-			if (mysqli_num_rows($last_login_query) > 0) {
-				$last_login = mysqli_result($last_login_query, 0);
-				if ($last_login == 0) {
-					$last_login = 'Today!';
-				} else {
-					$last_login = $last_login.' days ago';
-				}
-			} else {
-				$last_login = 'Never';
-			}
+    if ($query != false) {
 
-			$user['last_login'] = $last_login;
+      while ($user = mysqli_fetch_assoc($query)) {
 
-			$users[] = $user;
+        // Find last login
+        $sql = "SELECT TIMESTAMPDIFF(DAY, date, NOW()) as `last_login` FROM `{$config->database[SITE_IDENTIFIER]['prefix']}log` WHERE `user_id` = '{$user['id']}' AND `action` = 'login' ORDER BY `date` DESC LIMIT 1";
+        $last_login_query = mysqli_query($mysqli, $sql);
 
-		}
+        if (mysqli_num_rows($last_login_query) > 0) {
 
-		return $users;
+          $last_login_result = mysqli_fetch_assoc($last_login_query);
+          $last_login = $last_login_result['last_login'];
 
-	}
+          if ($last_login == 0) {
+            $last_login = 'Today!';
+          } else {
+            $last_login = $last_login.' days ago';
+          }
 
-	// Get beta signups who are still waiting for an invite
-	public static function list_users_beta() {
+        } else {
 
-		global $mysqli;
-		$config = new AppConfig;
+          $last_login = 'Never';
 
-		$sql = "SELECT `id`, `email`, TIMESTAMPDIFF(DAY, date_added, NOW()) AS days_waiting, (SELECT COUNT(*) FROM `{$config->database[SITE_IDENTIFIER]['prefix']}invites` WHERE `email` = {$config->database[SITE_IDENTIFIER]['prefix']}users.email) AS invites FROM `{$config->database[SITE_IDENTIFIER]['prefix']}users` WHERE `date_joined` IS NULL ORDER BY `date_added` ASC";
-		$waiting_users_query = mysqli_query($mysqli, $sql);
+        }
 
-		$waiting_users = array();
-		while ($user = mysqli_fetch_assoc($waiting_users_query)) {
-			$waiting_users[] = $user;
-		}
+        $user['last_login'] = $last_login;
 
-		return $waiting_users;
+        $users[] = $user;
 
-	}
+      }
 
-	// Grants a given number of invites to all users
-	public static function update_invites($invites) {
+    }
 
-		global $mysqli;
-		$config = new AppConfig;
+    return $users;
 
-		$invites = sanitize_input($invites);
+  }
 
-		$users = Admin::list_users();
+  // Count users
+  public static function count_users() {
 
-		foreach ($users as $user) {
+    global $mysqli;
+    $config = new AppConfig;
 
-			$new_invites = $user['invites'] + $invites;
+    $sql = "SELECT COUNT(`id`) AS count FROM `{$config->database[SITE_IDENTIFIER]['prefix']}users` WHERE `date_joined` IS NOT NULL";
+    $query = mysqli_query($mysqli, $sql);
+    $result = mysqli_fetch_assoc($query);
+    return $result == null ? 0 : $result['count'];
 
-			// uncomment the following line to zero invites
-			//$user['invites'] = 0;
+  }
 
-			$query = mysqli_query($mysqli, "UPDATE `{$config->database[SITE_IDENTIFIER]['prefix']}users` SET `invites` = $new_invites WHERE id = {$user['id']}");
+  // Get beta signups who are still waiting for an invite
+  public static function list_users_beta() {
 
-		}
+    global $mysqli;
+    $config = new AppConfig;
 
-	}
+    $sql = "SELECT `id`, `email`, TIMESTAMPDIFF(DAY, date_added, NOW()) AS days_waiting, (SELECT COUNT(*) FROM `{$config->database[SITE_IDENTIFIER]['prefix']}invites` WHERE `email` = {$config->database[SITE_IDENTIFIER]['prefix']}users.email) AS invites FROM `{$config->database[SITE_IDENTIFIER]['prefix']}users` WHERE `date_joined` IS NULL ORDER BY `date_added` ASC";
+    $waiting_users_query = mysqli_query($mysqli, $sql);
 
-	// Updates an item
-	public static function update_item($id, $title = NULL, $byline = NULL, $content = NULL, $status = 1) {
+    $waiting_users = array();
+    while ($user = mysqli_fetch_assoc($waiting_users_query)) {
+      $waiting_users[] = $user;
+    }
 
-		global $mysqli;
-		$config = new AppConfig;
+    return $waiting_users;
 
-		$id = sanitize_input($id);
+  }
 
-		$update_string = '';
+  // Grants a given number of invites to all users
+  public static function update_invites($invites) {
 
-		if ($title != NULL) {
-			$title = sanitize_input($title);
-			$update_string .= "title = $title, ";
-		}
+    global $mysqli;
+    $config = new AppConfig;
 
-		if ($content != NULL) {
-			$content = sanitize_input($content);
-			$update_string .= "content = $content, ";
-		}
+    $invites = sanitize_input($invites);
 
-		$status = sanitize_input($status);
-		$update_string .= "status = $status";
+    $users = Admin::list_users();
 
-		$query = mysqli_query($mysqli, "UPDATE `{$config->database[SITE_IDENTIFIER]['prefix']}items` SET $update_string WHERE id = $id");
+    foreach ($users as $user) {
 
-	}
+      $new_invites = $user['invites'] + $invites;
 
-	public static function tables_exist() {
+      // uncomment the following line to zero invites
+      //$user['invites'] = 0;
 
-		global $mysqli;
-		$config = new AppConfig;
+      $sql = "UPDATE `{$config->database[SITE_IDENTIFIER]['prefix']}users` SET `invites` = $new_invites WHERE id = {$user['id']}";
+      $query = mysqli_query($mysqli, $sql);
 
-		return mysqli_query($mysqli, "SELECT `id` FROM `{$config->database[SITE_IDENTIFIER]['prefix']}items") !== FALSE;
+    }
 
-	}
+  }
+
+  // Updates an item
+  public static function update_item($id, $title = NULL, $byline = NULL, $content = NULL, $status = 1) {
+
+    global $mysqli;
+    $config = new AppConfig;
+
+    $id = sanitize_input($id);
+
+    $update_string = '';
+
+    if ($title != NULL) {
+      $title = sanitize_input($title);
+      $update_string .= "title = $title, ";
+    }
+
+    if ($content != NULL) {
+      $content = sanitize_input($content);
+      $update_string .= "content = $content, ";
+    }
+
+    $status = sanitize_input($status);
+    $update_string .= "status = $status";
+
+    $sql = "UPDATE `{$config->database[SITE_IDENTIFIER]['prefix']}items` SET $update_string WHERE id = $id";
+    $query = mysqli_query($mysqli, $sql);
+
+  }
+
+  public static function tables_exist() {
+
+    global $mysqli;
+    $config = new AppConfig;
+
+    $sql = "SELECT `id` FROM `{$config->database[SITE_IDENTIFIER]['prefix']}items";
+    return mysqli_query($mysqli, $sql) !== FALSE;
+
+  }
 
 }

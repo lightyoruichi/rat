@@ -4,120 +4,135 @@
 
 class Search {
 
-	function search_split_terms($terms) {
+  function search_split_terms($terms) {
 
-		$terms = preg_replace("/\"(.*?)\"/e", "search_transform_term('\$1')", $terms);
-		$terms = preg_split("/\s+|,/", $terms);
+    $terms = preg_replace("/\"(.*?)\"/e", "search_transform_term('\$1')", $terms);
+    $terms = preg_split("/\s+|,/", $terms);
 
-		$out = array();
+    $out = array();
 
-		foreach($terms as $term) {
+    foreach ($terms as $term) {
 
-			$term = preg_replace("/\{WHITESPACE-([0-9]+)\}/e", "chr(\$1)", $term);
-			$term = preg_replace("/\{COMMA\}/", ",", $term);
+      $term = preg_replace("/\{WHITESPACE-([0-9]+)\}/e", "chr(\$1)", $term);
+      $term = preg_replace("/\{COMMA\}/", ",", $term);
 
-			$out[] = $term;
-		}
+      $out[] = $term;
 
-		return $out;
-	}
+    }
 
-	function search_transform_term($term) {
-		$term = preg_replace("/(\s)/e", "'{WHITESPACE-'.ord('\$1').'}'", $term);
-		$term = preg_replace("/,/", "{COMMA}", $term);
-		return $term;
-	}
+    return $out;
 
-	function search_escape_rlike($string) {
-		return preg_replace("/([.\[\]*^\$])/", '\\\$1', $string);
-	}
+  }
 
-	function search_db_escape_terms($terms) {
-		$out = array();
-		foreach($terms as $term) {
-			$out[] = '[[:<:]]'.AddSlashes($this->search_escape_rlike($term)).'[[:>:]]';
-		}
-		return $out;
-	}
+  function search_transform_term($term) {
 
-	function do_search($terms) {
+    $term = preg_replace("/(\s)/e", "'{WHITESPACE-'.ord('\$1').'}'", $term);
+    $term = preg_replace("/,/", "{COMMA}", $term);
+    return $term;
 
-		$terms = $this->search_split_terms($terms);
-		$terms_db = $this->search_db_escape_terms($terms);
-		$terms_rx = $this->search_rx_escape_terms($terms);
+  }
 
-		$parts = array();
-		foreach($terms_db as $term_db) {
-			$parts[] = "content RLIKE '$term_db'";
-		}
-		$parts = implode(' AND ', $parts);
+  function search_escape_rlike($string) {
+    return preg_replace("/([.\[\]*^\$])/", '\\\$1', $string);
+  }
 
-		$sql = "SELECT id FROM items WHERE $parts";
-		$query = mysql_query($sql);
+  function search_db_escape_terms($terms) {
 
-		while($result = mysql_fetch_array($query, MYSQL_ASSOC)) {
+    $out = array();
+    foreach ($terms as $term) {
+      $out[] = '[[:<:]]' . addslashes($this->search_escape_rlike($term)) . '[[:>:]]';
+    }
 
-			$item = Item::get_by_id($result['id']);
-			$item->content = process_content($item->content);
+    return $out;
 
-			$item->score = 0;
-			foreach($terms_rx as $term_rx) {
-				$item->score += preg_match_all("/$term_rx/i", $item->content, $null);
-			}
+  }
 
-			$items[] = $item;
+  function do_search($terms) {
 
-		}
+    global $mysqli;
 
-		if (count($items) > 1) {
-			uasort($items, 'search_sort_results');
-		}
+    $terms = $this->search_split_terms($terms);
+    $terms_db = $this->search_db_escape_terms($terms);
+    $terms_rx = $this->search_rx_escape_terms($terms);
 
-		return $items;
+    $parts = array();
+    foreach ($terms_db as $term_db) {
+      $parts[] = "content RLIKE '$term_db'";
+    }
+    $parts = implode(' AND ', $parts);
 
-	}
+    $sql = "SELECT id FROM items WHERE $parts";
+    $query = mysqli_query($mysqli, $sql);
 
-	function search_rx_escape_terms($terms) {
-		$out = array();
-		foreach($terms as $term) {
-			$out[] = '\b'.preg_quote($term, '/').'\b';
-		}
-		return $out;
-	}
+    $items = array();
+    while ($result = mysqli_fetch_assoc($query)) {
 
-	function search_sort_results($a, $b) {
+      $item = Item::get_by_id($result['id']);
+      $item->content = process_content($item->content);
 
-		$ax = $a->score;
-		$bx = $b->score;
+      $item->score = 0;
+      foreach ($terms_rx as $term_rx) {
+        $item->score += preg_match_all("/$term_rx/i", $item->content, $null);
+      }
 
-		if ($ax == $bx) { return 0; }
-		return ($ax > $bx) ? -1 : 1;
+      $items[] = $item;
 
-	}
+    }
 
-	function search_html_escape_terms($terms) {
-		$out = array();
+    if (count($items) > 1) {
+      uasort($items, array($this, 'search_sort_results'));
+    }
 
-		foreach($terms as $term) {
-			if (preg_match("/\s|,/", $term)) {
-				$out[] = '"'.HtmlSpecialChars($term).'"';
-			}else{
-				$out[] = HtmlSpecialChars($term);
-			}
-		}
+    return $items;
 
-		return $out;
-	}
+  }
 
-	function search_pretty_terms($terms_html) {
+  function search_rx_escape_terms($terms) {
 
-		if (count($terms_html) == 1) {
-			return array_pop($terms_html);
-		}
+    $out = array();
+    foreach ($terms as $term) {
+      $out[] = '\b'.preg_quote($term, '/') . '\b';
+    }
 
-		$last = array_pop($terms_html);
+    return $out;
 
-		return implode(', ', $terms_html)." and $last";
-	}
+  }
+
+  function search_sort_results($a, $b) {
+
+    $ax = $a->score;
+    $bx = $b->score;
+
+    if ($ax == $bx) { return 0; }
+    return ($ax > $bx) ? -1 : 1;
+
+  }
+
+  function search_html_escape_terms($terms) {
+
+    $out = array();
+
+    foreach ($terms as $term) {
+      if (preg_match("/\s|,/", $term)) {
+        $out[] = '"' . htmlspecialchars($term) . '"';
+      }else{
+        $out[] = htmlspecialchars($term);
+      }
+    }
+
+    return $out;
+  }
+
+  function search_pretty_terms($terms_html) {
+
+    if (count($terms_html) == 1) {
+      return array_pop($terms_html);
+    }
+
+    $last = array_pop($terms_html);
+
+    return implode(', ', $terms_html) . " and $last";
+
+  }
 
 }

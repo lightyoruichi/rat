@@ -1,7 +1,7 @@
 
 {% if session.user_id %}
 
-<form class="form-horizontal" action="{{ app.url_for('items', 'add') }}{% if app.uri.params.redirect_to %}/redirect_to={{ app.uri.params.redirect_to }}{% endif %}" method="post">
+<form class="form-horizontal" action="{{ app.url_for('items', 'add') }}{% if app.uri.params.redirect_to %}/redirect_to={{ app.uri.params.redirect_to }}{% endif %}" method="post" enctype="multipart/form-data">
   <fieldset>
 
     <legend>New {{ app.config.items.name }}</legend>
@@ -26,7 +26,7 @@
 
 {% if app.config.items.uploads.enabled %}
     <div class="control-group">
-      <label class="control-label" for="content">{{ app.config.items.uploads.name }}</label>
+      <label class="control-label" for="file">{{ app.config.items.uploads.name }}</label>
       <div class="controls">
         <input type="file" name="file" id="file" />
       </div>

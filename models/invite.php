@@ -85,7 +85,7 @@ class Invite {
 
     // Loop through invite ids, fetching objects
     $invites = array();
-    while ($result = mysqli_fetch_assoc($query)) {
+    while ($query && $result = mysqli_fetch_assoc($query)) {
       $invites[] = Invite::get_by_id($result['id']);
     }
 
@@ -101,7 +101,7 @@ class Invite {
 
     $sql = "SELECT `result` FROM `{$config->database[SITE_IDENTIFIER]['prefix']}invites` WHERE `id` = $this->id";
     $query = mysqli_query($mysqli, $sql);
-    $invites = mysql_fetch_assoc($query);
+    $invites = mysqli_fetch_assoc($query);
 
     $invites['result']++;
 

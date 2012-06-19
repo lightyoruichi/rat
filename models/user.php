@@ -45,7 +45,11 @@ class User {
 
     } else {
 
-      return new User($result);
+      $user = new User($result);
+
+      $user->email_notifications = $user->email_notifications();
+
+      return $user;
 
     }
 
@@ -198,7 +202,7 @@ class User {
     $query = mysqli_query($mysqli, $sql);
 
     $items = array();
-    while ($result = mysqli_fetch_assoc($query)) {
+    while ($query && $result = mysqli_fetch_assoc($query)) {
       $items[] = Item::get_by_id($result['id']);
     }
 
@@ -225,7 +229,7 @@ class User {
     $query = mysqli_query($mysqli, $sql);
 
     $invites = array();
-    while ($result = mysqli_fetch_assoc($query)) {
+    while ($query && $result = mysqli_fetch_assoc($query)) {
       $invites[] = Invite::get_by_id($result['id']);
     }
 
@@ -252,7 +256,7 @@ class User {
     $query = mysqli_query($mysqli, $sql);
 
     $friends = array();
-    while ($result = mysqli_fetch_assoc($query)) {
+    while ($query && $result = mysqli_fetch_assoc($query)) {
       $friends[$result['id']] = User::get_by_id($result['friend_user_id']);
       unset($friends[$result['id']]->password);
     }
@@ -280,7 +284,7 @@ class User {
     $query = mysqli_query($mysqli, $sql);
 
     $friends = array();
-    while ($result = mysqli_fetch_assoc($query)) {
+    while ($query && $result = mysqli_fetch_assoc($query)) {
       $friends[$result['id']] = User::get_by_id($result['user_id']);
       unset($friends[$result['id']]->password);
     }
@@ -308,7 +312,7 @@ class User {
     $query = mysqli_query($mysqli, $sql);
 
     $items = array();
-    while ($result = mysqli_fetch_assoc($query)) {
+    while ($query && $result = mysqli_fetch_assoc($query)) {
       $items[] = Item::get_by_id($result['item_id']);
     }
 
@@ -335,11 +339,30 @@ class User {
     $query = mysqli_query($mysqli, $sql);
 
     $comments = array();
-    while ($result = mysqli_fetch_assoc($query)) {
+    while ($query && $result = mysqli_fetch_assoc($query)) {
       $comments[] = Comment::get_by_id($result['id']);
     }
 
     return $comments;
+
+  }
+
+  // Get email notification settings
+  public function email_notifications() {
+
+    global $mysqli;
+    $config = new AppConfig;
+
+    $sql = "SELECT `notification`, `value` FROM `{$config->database[SITE_IDENTIFIER]['prefix']}users_email_notifications` WHERE `user_id` = $this->id";
+
+    $query = mysqli_query($mysqli, $sql);
+
+    $emails = array();
+    while ($query && $result = mysqli_fetch_assoc($query)) {
+      $emails[$result['notification']] = $result['value'];
+    }
+
+    return $emails;
 
   }
 
@@ -423,7 +446,7 @@ class User {
 
     // Loop through item ids, fetching objects
     $items = array();
-    while ($result = mysqli_fetch_assoc($query)) {
+    while ($query && $result = mysqli_fetch_assoc($query)) {
       $items[] = Item::get_by_id($result['id']);
     }
 
@@ -499,6 +522,22 @@ class User {
 
   }
 
+  // Update email notification settings
+  public function update_email_notifications(array $emails = null) {
+
+    global $mysqli;
+    $config = new AppConfig;
+
+    foreach ($emails as $key => $value) {
+
+      $sql = "INSERT INTO `{$config->database[SITE_IDENTIFIER]['prefix']}users_email_notifications` (user_id, notification, value) VALUES ($this->id, '$key', $value) ON DUPLICATE KEY UPDATE `value` = $value;";
+
+      $query = mysqli_query($mysqli, $sql);
+
+    }
+
+  }
+
   // Update a user's number of invites
   public function update_invites($invites) {
 
@@ -510,7 +549,7 @@ class User {
     // Get current # of invites
     $sql = "SELECT `invites` FROM `{$config->database[SITE_IDENTIFIER]['prefix']}users` WHERE `id` = $this->id";
     $query = mysqli_query($mysqli, $sql);
-    $user = mysql_fetch_assoc($query);
+    $user = mysqli_fetch_assoc($query);
 
     // Calculate new # of invites
     $user['invites'] = $user['invites'] + $invites;
